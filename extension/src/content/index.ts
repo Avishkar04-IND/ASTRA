@@ -1,4 +1,3 @@
-import { mockProfile } from "../shared/mockProfile";
 import type { DetectableField, FieldKey, MessageResponse } from "../types";
 import { renderConsentPanel } from "./consentPanel";
 import { scanPageForFields } from "./scan";
@@ -60,14 +59,29 @@ function setNativeValue(element: HTMLElement, value: string) {
   inputElement.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-function fillApprovedFields(fields: DetectableField[], approvedKeys: FieldKey[]) {
+type MockDocumentResponse = {
+  documents: Array<{ fields: Partial<Record<FieldKey, string>> }>;
+};
+
+async function fetchMockDigiLockerFields(): Promise<Partial<Record<FieldKey, string>>> {
+  const response = await fetch(`${window.location.origin}/api/mock/digilocker/documents`);
+  if (!response.ok) throw new Error("Mock DigiLocker API is unavailable.");
+
+  const data = (await response.json()) as MockDocumentResponse;
+  return data.documents.reduce<Partial<Record<FieldKey, string>>>((profile, document) => {
+    Object.assign(profile, document.fields);
+    return profile;
+  }, {});
+}
+
+function fillApprovedFields(fields: DetectableField[], approvedKeys: FieldKey[], profile: Partial<Record<FieldKey, string>>) {
   const filled: Array<{ fieldKey: FieldKey; value: string }> = [];
   const allowed = new Set(approvedKeys);
 
   fields.forEach((field) => {
     if (!allowed.has(field.fieldKey)) return;
 
-    const value = mockProfile[field.fieldKey];
+    const value = profile[field.fieldKey];
     const target = document.getElementById(field.elementId);
     if (!target || !value) return;
 
@@ -87,15 +101,22 @@ function requestConsentAndAutofill(fields: DetectableField[], sendResponse: (res
       payload: { siteOrigin, purpose, fieldKeys: approvedKeys, expiresAt: null },
     });
 
-    const filled = fillApprovedFields(fields, approvedKeys);
-    showNotice(`MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"}.`);
+    try {
+      const profile = await fetchMockDigiLockerFields();
+      const filled = fillApprovedFields(fields, approvedKeys, profile);
+      showNotice(`MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"} from mock DigiLocker.`);
 
-    sendResponse({
-      success: true,
-      fields,
-      filled,
-      message: `MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"} after consent.`,
-    });
+      sendResponse({
+        success: true,
+        fields,
+        filled,
+        message: `MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"} from mock DigiLocker after consent.`,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to fetch mock DigiLocker data.";
+      showNotice(message);
+      sendResponse({ success: false, fields, message });
+    }
   });
 }
 

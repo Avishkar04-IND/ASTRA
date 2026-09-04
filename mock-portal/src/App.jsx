@@ -1,8 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import './index.css';
 
 function App() {
   const [submitted, setSubmitted] = useState(false);
+  const [documentStatus, setDocumentStatus] = useState('Loading DigiLocker mock documents...');
+
+  useEffect(() => {
+    fetch('/api/mock/digilocker/documents')
+      .then((response) => {
+        if (!response.ok) throw new Error('Mock API unavailable');
+        return response.json();
+      })
+      .then((data) => setDocumentStatus(`${data.documents.length} DigiLocker mock documents available`))
+      .catch(() => setDocumentStatus('DigiLocker mock API unavailable'));
+  }, []);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -28,6 +39,7 @@ function App() {
           <div className="form-header">
             <h2>Maharashtra State Scholarship Application</h2>
             <p className="form-subtitle">Academic Year 2026-2027</p>
+            <p className="document-status" role="status">{documentStatus}</p>
           </div>
 
           {submitted ? (
