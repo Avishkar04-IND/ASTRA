@@ -59,6 +59,11 @@ export type LoginMessage = {
   payload: { email: string; password: string };
 };
 
+export type SignupMessage = {
+  type: "SIGNUP";
+  payload: { email: string; password: string };
+};
+
 export type LogoutMessage = { type: "LOGOUT" };
 export type SessionStatusMessage = { type: "GET_SESSION_STATUS" };
 
@@ -69,6 +74,7 @@ export type ExtensionMessage =
   | RequestAutofillMessage
   | FormDetectedMessage
   | LoginMessage
+  | SignupMessage
   | LogoutMessage
   | SessionStatusMessage;
 
@@ -80,6 +86,8 @@ export type MessageResponse = {
   message?: string;
   error?: string;
   loggedIn?: boolean;
+  authenticated?: boolean;
+  needsUnlock?: boolean;
   email?: string;
   expiresAt?: number;
 };

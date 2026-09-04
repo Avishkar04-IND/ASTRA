@@ -45,9 +45,7 @@ export default function Login() {
       let saltBase64;
       if (profileErr && profileErr.code === 'PGRST116') {
         // No profile found, generate a new salt and insert
-        const saltBytes = generateSalt();
-        // Convert to Base64 (browser compatible)
-        saltBase64 = btoa(String.fromCharCode(...new Uint8Array(saltBytes)));
+        saltBase64 = generateSalt();
         
         const { error: insertErr } = await supabase
           .from('profiles')
@@ -60,15 +58,8 @@ export default function Login() {
         saltBase64 = profileRow.key_derivation_salt;
       }
 
-      // Reconstruct Uint8Array from Base64
-      const binaryString = atob(saltBase64);
-      const salt = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        salt[i] = binaryString.charCodeAt(i);
-      }
-
       // Derive the key in-memory
-      const derivedKey = await deriveKey(password, salt);
+      const derivedKey = await deriveKey(password, saltBase64);
       
       // Store in React Context ONLY (never localStorage)
       setSessionKey(derivedKey);

@@ -1,10 +1,33 @@
 import { useEffect, useState } from "react";
 import type { MessageResponse } from "../types";
 
+/** Retry sendMessage a few times to handle service-worker wakeup race. */
+async function sendMessageWithRetry(
+  message: object,
+  retries = 5,
+  delayMs = 400,
+): Promise<MessageResponse> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    try {
+      const response = await chrome.runtime.sendMessage(message) as MessageResponse;
+      return response;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (attempt < retries - 1 && /receiving end does not exist/i.test(msg)) {
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("Extension service worker did not respond. Try reloading the extension at chrome://extensions.");
+}
+
 type RuntimeAction = "SCAN_PAGE" | "AUTOFILL_FORM";
 
 export function PopupApp() {
   const [loggedIn, setLoggedIn] = useState(false);
+  const [needsUnlock, setNeedsUnlock] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [sessionEmail, setSessionEmail] = useState("");
@@ -14,43 +37,78 @@ export function PopupApp() {
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
-    chrome.runtime.sendMessage({ type: "GET_SESSION_STATUS" }, (response: MessageResponse) => {
+    void sendMessageWithRetry({ type: "GET_SESSION_STATUS" }).then((response: MessageResponse) => {
       if (response?.loggedIn) {
         setLoggedIn(true);
+        setNeedsUnlock(false);
         setSessionEmail(response.email || "");
         setExpiresAt(response.expiresAt);
+      } else if (response?.needsUnlock) {
+        setNeedsUnlock(true);
+        if (response.email) {
+          setEmail(response.email);
+          setSessionEmail(response.email);
+        }
+        setStatus("Session found");
+        setNotice("Enter your password to unlock the extension.");
       }
+    }).catch((error: unknown) => {
+      setStatus("Extension needs to be reloaded");
+      setNotice(error instanceof Error ? error.message : "Could not connect to the background service.");
     });
   }, []);
 
-  const login = () => {
+  const authenticate = async (type: "LOGIN" | "SIGNUP") => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setNotice("Please enter both email and password.");
+      return;
+    }
     setIsLoading(true);
     setNotice("");
-    chrome.runtime.sendMessage({ type: "LOGIN", payload: { email, password } }, (response: MessageResponse) => {
+    try {
+      const response = await chrome.runtime.sendMessage({ type, payload: { email: trimmedEmail, password } }) as MessageResponse;
       setIsLoading(false);
-      if (chrome.runtime.lastError || !response?.success) {
-        setNotice(chrome.runtime.lastError?.message || response?.message || "Login failed.");
+      if (!response?.success) throw new Error(response?.message || response?.error || "Authentication failed.");
+      if (response.loggedIn === false) {
+        setLoggedIn(false);
+        setNeedsUnlock(false);
+        setSessionEmail(response.email || trimmedEmail);
+        setExpiresAt(undefined);
+        setStatus("Email confirmation needed");
+        setNotice(response.message || "Confirm your email first, then sign in again.");
         return;
       }
       setLoggedIn(true);
-      setSessionEmail(response.email || email);
+      setNeedsUnlock(false);
+      setSessionEmail(response.email || trimmedEmail);
       setExpiresAt(response.expiresAt);
       setPassword("");
-      setStatus("Signed in");
-      setNotice("You will stay signed in for 30 days unless you log out.");
-    });
+      setStatus(type === "LOGIN" ? "Signed in" : "Account ready");
+      setNotice(response.message || "You will stay signed in for 30 days unless you log out.");
+    } catch (error: unknown) {
+      setIsLoading(false);
+      setStatus("Authentication failed");
+      setNotice(error instanceof Error ? error.message : String(error || "Check the extension service worker."));
+    }
   };
 
-  const logout = () => {
-    chrome.runtime.sendMessage({ type: "LOGOUT" }, (response: MessageResponse) => {
+  const logout = async () => {
+    try {
+      const response = await chrome.runtime.sendMessage({ type: "LOGOUT" }) as MessageResponse;
       if (response?.success) {
         setLoggedIn(false);
+        setNeedsUnlock(false);
+        setEmail("");
+        setPassword("");
         setSessionEmail("");
         setExpiresAt(undefined);
         setStatus("Signed out");
         setNotice("Sign in to use autofill.");
       }
-    });
+    } catch (error: unknown) {
+      setNotice(error instanceof Error ? error.message : "Could not contact the extension service.");
+    }
   };
 
   const sendMessage = async (type: RuntimeAction) => {
@@ -67,13 +125,34 @@ export function PopupApp() {
       if (!tab?.id || !tab.url || !tab.url.startsWith("http")) {
         setStatus("Open a local mock portal first");
         setNotice("MahaSetu is limited to local mock/sandbox pages in this prototype.");
+        setIsLoading(false);
         return;
       }
 
+      if (type === "AUTOFILL_FORM") {
+        // AUTOFILL_FORM shows a consent panel that the user must interact with ON the page.
+        // The popup must close so the user can click the panel — if the popup stays open
+        // it steals focus and the message channel tears down before sendResponse fires.
+        // Fire-and-forget: send the message, then close the popup immediately.
+        // The content script's own showNotice() handles completion feedback.
+        chrome.tabs.sendMessage(tab.id, { type }, () => {
+          // Suppress "Receiving end does not exist" if content script isn't injected yet.
+          void chrome.runtime.lastError;
+        });
+        window.close();
+        return;
+      }
+
+      // SCAN_PAGE: response is synchronous (no user interaction needed), safe to await.
       chrome.tabs.sendMessage(tab.id, { type }, (response: MessageResponse) => {
         if (chrome.runtime.lastError) {
+          const errMsg = chrome.runtime.lastError.message || "";
           setStatus("Extension error");
-          setNotice(chrome.runtime.lastError.message || "Could not connect to this page.");
+          setNotice(
+            /receiving end does not exist/i.test(errMsg)
+              ? "Content script not found on this tab. Please refresh the page and try again."
+              : errMsg || "Could not connect to this page.",
+          );
           setIsLoading(false);
           return;
         }
@@ -85,24 +164,14 @@ export function PopupApp() {
           return;
         }
 
-        if (type === "SCAN_PAGE") {
-          const count = response.fields?.length ?? 0;
-          setStatus(`Detected ${count} field${count === 1 ? "" : "s"}`);
-          setNotice("Autofill will ask for field-level consent before sharing mock data.");
-        }
-
-        if (type === "AUTOFILL_FORM") {
-          const count = response.filled?.length ?? 0;
-          setStatus(`Filled ${count} field${count === 1 ? "" : "s"}`);
-          setNotice(response.message || "Autofill complete.");
-        }
-
+        const count = response.fields?.length ?? 0;
+        setStatus(`Detected ${count} field${count === 1 ? "" : "s"}`);
+        setNotice("Autofill will ask for field-level consent before sharing mock data.");
         setIsLoading(false);
       });
     } catch (error) {
       setStatus("Extension error");
       setNotice(error instanceof Error ? error.message : "Unknown runtime error.");
-    } finally {
       setIsLoading(false);
     }
   };
@@ -115,12 +184,27 @@ export function PopupApp() {
       </p>
 
       {!loggedIn ? (
-        <form onSubmit={(event) => { event.preventDefault(); login(); }} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="Email" required style={inputStyle} />
-          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Password" required style={inputStyle} />
+        <form onSubmit={(event) => { event.preventDefault(); authenticate("LOGIN"); }} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {needsUnlock ? (
+            <div style={{ fontSize: "13px", fontWeight: 600, color: "#1e293b", background: "#f1f5f9", padding: "8px 10px", borderRadius: "6px" }}>
+              Unlock vault: <span style={{ color: "#2563eb" }}>{sessionEmail || email}</span>
+            </div>
+          ) : (
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="Email" required style={inputStyle} />
+          )}
+          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={needsUnlock ? "Enter your password to unlock" : "Password"} required style={inputStyle} />
           <button type="submit" disabled={isLoading} style={primaryButton("#1447e6", isLoading)}>
-            {isLoading ? "Signing in..." : "Sign in"}
+            {isLoading ? (needsUnlock ? "Unlocking..." : "Signing in...") : (needsUnlock ? "Unlock Vault" : "Sign in")}
           </button>
+          {needsUnlock ? (
+            <button type="button" onClick={logout} disabled={isLoading} style={secondaryButton}>
+              Use different account
+            </button>
+          ) : (
+            <button type="button" onClick={() => authenticate("SIGNUP")} disabled={isLoading} style={secondaryButton}>
+              Create account
+            </button>
+          )}
           {notice && <div style={messageBox}>{notice}</div>}
         </form>
       ) : (

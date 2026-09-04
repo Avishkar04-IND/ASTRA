@@ -96,10 +96,18 @@ function requestConsentAndAutofill(fields: DetectableField[], sendResponse: (res
   const siteOrigin = window.location.origin;
 
   renderConsentPanel(fields, siteOrigin, async (approvedKeys, purpose) => {
-    chrome.runtime.sendMessage({
-      type: "GRANT_CONSENT",
-      payload: { siteOrigin, purpose, fieldKeys: approvedKeys, expiresAt: null },
-    });
+    chrome.runtime.sendMessage(
+      {
+        type: "GRANT_CONSENT",
+        payload: { siteOrigin, purpose, fieldKeys: approvedKeys, expiresAt: null },
+      },
+      () => {
+        // Best-effort: swallow "Receiving end does not exist" if the service
+        // worker is sleeping when consent fires. The consent record is stored
+        // by the service worker when it wakes; this is non-critical for autofill.
+        void chrome.runtime.lastError;
+      },
+    );
 
     try {
       const profile = await fetchMockDigiLockerFields();
