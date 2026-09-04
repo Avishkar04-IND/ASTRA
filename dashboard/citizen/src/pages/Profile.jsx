@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { useSession } from '../context/SessionContext';
 import { Save } from 'lucide-react';
-import { UserProfileSchema } from '../../../../shared/schemas/fieldSchemas';
-import { FIELD_KEY_LABELS, getFieldSensitivity, FIELD_SOURCE } from '../../../../shared/constants/fieldKeys';
+import { UserProfileSchema } from '../lib/fieldSchemas';
+import { FIELD_KEY_LABELS, getFieldSensitivity, FIELD_SOURCE } from '../lib/fieldKeys';
 import StateFeedback from '../components/StateFeedback';
 import { encryptField, decryptField } from '../lib/crypto';
 
@@ -20,6 +20,11 @@ export default function Profile() {
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
   const [validationErrors, setValidationErrors] = useState({});
+
+    const formatTypeForField = (fieldKey) => {
+      if (fieldKey === 'dob') return 'date';
+      return 'text';
+    };
 
   useEffect(() => {
     async function loadProfile() {
@@ -140,6 +145,7 @@ export default function Profile() {
                       field_key: key,
                       field_value_ciphertext: ciphertext,
                       field_value_iv: iv,
+                      format_type: formatTypeForField(key),
                       sensitivity: sensitivity,
                       source: FIELD_SOURCE.MANUAL
                   });
