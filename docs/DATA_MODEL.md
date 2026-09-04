@@ -19,7 +19,13 @@ These names must be used consistently across dashboard forms, extension field ma
 
 ## UserProfile
 
-Citizen or official identity record. Stores account identity, role, contact fields, and timestamps. Aadhaar values in the MVP must be synthetic only.
+Citizen or official identity record. Stores account identity, `display_name`, `email`, `role`, and timestamps.
+**IMPORTANT**: `profiles` never holds plaintext PII. Columns like `full_name`, `dob`, `aadhaar_number`, `mobile`, and `address` have been removed. All sensitive field values live exclusively in `profile_fields` as ciphertext.
+
+## profile_fields
+
+Stores encrypted sensitive data for citizens.
+Columns: `id`, `user_id` (references `profiles(id)`), `section`, `field_key`, `field_value_ciphertext`, `field_value_iv`, `format_type`, `format_regex`, `sensitivity`, `source`, `is_verified`, `created_at`, `updated_at`.
 
 ## Document
 

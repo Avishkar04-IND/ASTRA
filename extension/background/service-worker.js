@@ -39,12 +39,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           let salt = profile?.key_derivation_salt;
           
           if (!salt) {
-            // New user scenario or missing salt, generate one and save it
-            salt = generateSalt();
-            const { error: upsertError } = await supabase
-              .from('profiles')
-              .upsert({ id: currentUserId, email: authData.user.email, key_derivation_salt: salt });
-            if (upsertError) throw upsertError;
+            throw new Error('Key derivation salt is missing for this user.');
           }
           
           // 3. Derive the AES session key and keep it in memory
@@ -92,7 +87,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 field_value_iv: iv,
                 section,
                 format_type: formatType,
-                sensitivity: sensitivity || 'normal',
+                sensitivity: sensitivity || 'low',
                 source: source || 'manual'
               })
               .eq('id', existingField.id);
@@ -107,7 +102,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 field_value_ciphertext: ciphertext,
                 field_value_iv: iv,
                 format_type: formatType,
-                sensitivity: sensitivity || 'normal',
+                sensitivity: sensitivity || 'low',
                 source: source || 'manual'
               });
             if (insertError) throw insertError;

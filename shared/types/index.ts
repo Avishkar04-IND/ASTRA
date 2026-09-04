@@ -15,18 +15,15 @@ export type ApplicationStatus =
   | "requires_action";
 export type GrievanceStatus = "open" | "in_review" | "resolved" | "closed";
 export type ApprovalStatus = "pending" | "approved" | "rejected" | "escalated";
-export type DocumentSource = "manual" | "digilocker_mock" | "api_setu_sandbox";
-export type FieldSensitivity = "normal" | "sensitive" | "restricted";
+export type DocumentSource = "manual" | "digilocker" | "api_setu";
+export type FieldSensitivity = "high" | "medium" | "low";
 
 export interface UserProfile {
   id: UUID;
   role: UserRole;
   email: string;
-  full_name?: string;
-  dob?: ISODateString;
-  aadhaar_number?: string;
-  mobile?: string;
-  address?: string;
+  display_name?: string;
+  key_derivation_salt: string;
   created_at: ISODateTimeString;
   updated_at: ISODateTimeString;
 }

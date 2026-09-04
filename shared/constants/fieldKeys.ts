@@ -1,3 +1,4 @@
+// All sensitive identity fields are stored exclusively in profile_fields as encrypted values. profiles never holds plaintext PII.
 export const FIELD_KEYS = {
   FULL_NAME: "full_name",
   DOB: "dob",
@@ -32,3 +33,30 @@ export const FIELD_KEY_SYNONYMS: Record<FieldKey, string[]> = {
   college_name: ["college", "institute name", "institution", "school name"],
   marks_percentage: ["percentage", "marks", "score", "academic percentage"],
 };
+
+export const FIELD_SENSITIVITY = {
+  HIGH: "high",
+  MEDIUM: "medium",
+  LOW: "low",
+} as const;
+
+export const FIELD_SOURCE = {
+  MANUAL: "manual",
+  DIGILOCKER: "digilocker",
+  API_SETU: "api_setu",
+} as const;
+
+export const FIELD_SENSITIVITY_MAP: Record<FieldKey, "high" | "medium" | "low"> = {
+  full_name: "low",
+  college_name: "low",
+  marks_percentage: "low",
+  dob: "medium",
+  mobile: "medium",
+  address: "medium",
+  annual_income: "medium",
+  aadhaar_number: "high",
+};
+
+export function getFieldSensitivity(fieldKey: FieldKey): "high" | "medium" | "low" {
+  return FIELD_SENSITIVITY_MAP[fieldKey] ?? "medium";
+}
