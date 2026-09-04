@@ -19,13 +19,13 @@ These names must be used consistently across dashboard forms, extension field ma
 
 ## UserProfile
 
-Citizen or official identity record. Stores account identity, `display_name`, `email`, `role`, and timestamps.
+Account identity record linked to Supabase Auth. Stores `id`, `email`, the key-derivation salt, and timestamps.
 **IMPORTANT**: `profiles` never holds plaintext PII. Columns like `full_name`, `dob`, `aadhaar_number`, `mobile`, and `address` have been removed. All sensitive field values live exclusively in `profile_fields` as ciphertext.
 
 ## profile_fields
 
 Stores encrypted sensitive data for citizens.
-Columns: `id`, `user_id` (references `profiles(id)`), `section`, `field_key`, `field_value_ciphertext`, `field_value_iv`, `format_type`, `format_regex`, `sensitivity`, `source`, `is_verified`, `created_at`, `updated_at`.
+Columns: `id`, `user_id` (references `profiles(id)`), `section`, `field_key`, `field_value_ciphertext`, `field_value_iv`, `format_type`, `sensitivity`, `source`, `created_at`, `updated_at`.
 
 ## Document
 

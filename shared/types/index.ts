@@ -20,9 +20,7 @@ export type FieldSensitivity = "high" | "medium" | "low";
 
 export interface UserProfile {
   id: UUID;
-  role: UserRole;
   email: string;
-  display_name?: string;
   key_derivation_salt: string;
   created_at: ISODateTimeString;
   updated_at: ISODateTimeString;
