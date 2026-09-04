@@ -1,14 +1,63 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { MessageResponse } from "../types";
 
 type RuntimeAction = "SCAN_PAGE" | "AUTOFILL_FORM";
 
 export function PopupApp() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [sessionEmail, setSessionEmail] = useState("");
+  const [expiresAt, setExpiresAt] = useState<number>();
   const [status, setStatus] = useState("Extension active");
   const [notice, setNotice] = useState("Open the mock portal, then scan or autofill.");
   const [isLoading, setIsLoading] = useState(false);
 
+  useEffect(() => {
+    chrome.runtime.sendMessage({ type: "GET_SESSION_STATUS" }, (response: MessageResponse) => {
+      if (response?.loggedIn) {
+        setLoggedIn(true);
+        setSessionEmail(response.email || "");
+        setExpiresAt(response.expiresAt);
+      }
+    });
+  }, []);
+
+  const login = () => {
+    setIsLoading(true);
+    setNotice("");
+    chrome.runtime.sendMessage({ type: "LOGIN", payload: { email, password } }, (response: MessageResponse) => {
+      setIsLoading(false);
+      if (chrome.runtime.lastError || !response?.success) {
+        setNotice(chrome.runtime.lastError?.message || response?.message || "Login failed.");
+        return;
+      }
+      setLoggedIn(true);
+      setSessionEmail(response.email || email);
+      setExpiresAt(response.expiresAt);
+      setPassword("");
+      setStatus("Signed in");
+      setNotice("You will stay signed in for 30 days unless you log out.");
+    });
+  };
+
+  const logout = () => {
+    chrome.runtime.sendMessage({ type: "LOGOUT" }, (response: MessageResponse) => {
+      if (response?.success) {
+        setLoggedIn(false);
+        setSessionEmail("");
+        setExpiresAt(undefined);
+        setStatus("Signed out");
+        setNotice("Sign in to use autofill.");
+      }
+    });
+  };
+
   const sendMessage = async (type: RuntimeAction) => {
+    if (!loggedIn) {
+      setNotice("Sign in before using this action.");
+      return;
+    }
     setIsLoading(true);
     setNotice("");
 
@@ -65,23 +114,36 @@ export function PopupApp() {
         Fill once, apply anywhere
       </p>
 
-      <div style={{ marginBottom: "16px", fontWeight: 700, color: "#166534" }}>{status}</div>
+      {!loggedIn ? (
+        <form onSubmit={(event) => { event.preventDefault(); login(); }} style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="Email" required style={inputStyle} />
+          <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Password" required style={inputStyle} />
+          <button type="submit" disabled={isLoading} style={primaryButton("#1447e6", isLoading)}>
+            {isLoading ? "Signing in..." : "Sign in"}
+          </button>
+          {notice && <div style={messageBox}>{notice}</div>}
+        </form>
+      ) : (
+        <>
+          <div style={{ marginBottom: "8px", fontWeight: 700, color: "#166534" }}>{status}</div>
+          <div style={{ marginBottom: "16px", fontSize: "12px", color: "#64748b" }}>
+            {sessionEmail}<br />Session expires {expiresAt ? new Date(expiresAt).toLocaleDateString() : "soon"}
+          </div>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-        <button onClick={() => sendMessage("SCAN_PAGE")} disabled={isLoading} style={primaryButton("#1447e6", isLoading)}>
-          {isLoading ? "Scanning..." : "Scan This Page"}
-        </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <button onClick={() => sendMessage("SCAN_PAGE")} disabled={isLoading} style={primaryButton("#1447e6", isLoading)}>
+              {isLoading ? "Scanning..." : "Scan This Page"}
+            </button>
 
-        <button
-          onClick={() => sendMessage("AUTOFILL_FORM")}
-          disabled={isLoading}
-          style={primaryButton("#166534", isLoading)}
-        >
-          {isLoading ? "Working..." : "Autofill With Consent"}
-        </button>
-      </div>
+            <button onClick={() => sendMessage("AUTOFILL_FORM")} disabled={isLoading} style={primaryButton("#166534", isLoading)}>
+              {isLoading ? "Working..." : "Autofill With Consent"}
+            </button>
+            <button onClick={logout} style={secondaryButton}>Sign out</button>
+          </div>
 
-      {notice && <div style={messageBox}>{notice}</div>}
+          {notice && <div style={messageBox}>{notice}</div>}
+        </>
+      )}
 
       <div style={{ marginTop: "12px", fontSize: "12px", lineHeight: 1.4, color: "#64748b" }}>
         Prototype mode: uses synthetic data only. DigiLocker/API Setu and government APIs remain mock or sandbox.
@@ -112,4 +174,21 @@ const messageBox = {
   border: "1px solid #a5f3fc",
   color: "#0f172a",
   lineHeight: 1.4,
+} as const;
+
+const inputStyle = {
+  padding: "10px 12px",
+  borderRadius: "8px",
+  border: "1px solid #cbd5e1",
+  fontSize: "13px",
+} as const;
+
+const secondaryButton = {
+  padding: "9px 12px",
+  borderRadius: "8px",
+  border: "1px solid #cbd5e1",
+  background: "#fff",
+  color: "#334155",
+  fontWeight: 700,
+  cursor: "pointer",
 } as const;

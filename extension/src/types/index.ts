@@ -54,12 +54,23 @@ export type FormDetectedMessage = {
   };
 };
 
+export type LoginMessage = {
+  type: "LOGIN";
+  payload: { email: string; password: string };
+};
+
+export type LogoutMessage = { type: "LOGOUT" };
+export type SessionStatusMessage = { type: "GET_SESSION_STATUS" };
+
 export type ExtensionMessage =
   | ScanPageMessage
   | AutofillPageMessage
   | GrantConsentMessage
   | RequestAutofillMessage
-  | FormDetectedMessage;
+  | FormDetectedMessage
+  | LoginMessage
+  | LogoutMessage
+  | SessionStatusMessage;
 
 export type MessageResponse = {
   success: boolean;
@@ -68,4 +79,7 @@ export type MessageResponse = {
   missingConsents?: FieldKey[];
   message?: string;
   error?: string;
+  loggedIn?: boolean;
+  email?: string;
+  expiresAt?: number;
 };
