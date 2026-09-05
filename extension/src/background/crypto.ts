@@ -37,3 +37,17 @@ export async function deriveKey(password: string, saltBase64: string) {
     ["encrypt", "decrypt"],
   );
 }
+
+export async function decryptField(ciphertextBase64: string, ivBase64: string, key: CryptoKey) {
+  const decode = (value: string) => {
+    const binary = atob(value);
+    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  };
+
+  const plaintext = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: decode(ivBase64) },
+    key,
+    decode(ciphertextBase64),
+  );
+  return new TextDecoder().decode(plaintext);
+}

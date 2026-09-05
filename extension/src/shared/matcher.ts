@@ -1,14 +1,14 @@
 import type { DetectableField, FieldKey } from "../types";
 
 const FIELD_SYNONYMS: Record<FieldKey, string[]> = {
-  full_name: ["full name", "name", "applicant name", "student name", "beneficiary name", "candidate name"],
-  dob: ["date of birth", "dob", "birth date", "d o b"],
-  aadhaar_number: ["aadhaar number", "aadhaar no", "aadhar number", "aadhar no", "uidai number", "uid", "aadhaar", "aadhar"],
-  mobile: ["mobile", "mobile number", "phone", "phone number", "contact number", "telephone"],
+  full_name: ["full_name", "full name", "name", "applicant name", "student name", "beneficiary name", "candidate name"],
+  dob: ["dob", "date of birth", "birth date", "d o b"],
+  aadhaar_number: ["aadhaar_number", "aadhaar number", "aadhaar no", "aadhar number", "aadhar no", "uidai number", "uid", "aadhaar", "aadhar"],
+  mobile: ["mobile", "mobile_number", "mobile number", "phone", "phone number", "contact number", "telephone"],
   address: ["address", "residential address", "permanent address", "current address", "postal address"],
-  annual_income: ["annual income", "income", "family income", "household income", "annual family income"],
-  college_name: ["college", "college name", "institution name", "institute name", "school name", "university name"],
-  marks_percentage: ["marks", "percentage", "marks percentage", "score", "academic percentage", "class 10 marks"],
+  annual_income: ["annual_income", "annual income", "income", "family income", "household income", "annual family income"],
+  college_name: ["college_name", "college", "college name", "institution name", "institute name", "school name", "university name"],
+  marks_percentage: ["marks_percentage", "marks", "percentage", "marks percentage", "score", "academic percentage", "class 10 marks"],
 };
 
 export const normalize = (value: string): string =>
@@ -53,6 +53,10 @@ const scoreField = (normalizedLabel: string, normalizedCombined: string, fieldKe
 export function matchFieldKey(label: string, fallback?: string): FieldKey | undefined {
   const normalizedLabel = normalize(label);
   const combined = [label, fallback || ""].filter(Boolean).map(normalize).join(" ");
+
+  for (const fieldKey of Object.keys(FIELD_SYNONYMS) as FieldKey[]) {
+    if (normalize(fallback || "") === fieldKey) return fieldKey;
+  }
 
   if (isUnsupportedIdentityField(normalizedLabel)) {
     return undefined;

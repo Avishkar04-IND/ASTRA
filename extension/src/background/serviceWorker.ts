@@ -1,6 +1,6 @@
 import type { ExtensionMessage } from "../types";
 import { createClient } from "@supabase/supabase-js";
-import { deriveKey, generateSalt } from "./crypto";
+import { decryptField, deriveKey, generateSalt } from "./crypto";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -250,14 +250,54 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
     }
 
     if (message.type === "GRANT_CONSENT") {
-      chrome.storage.local.set({
-      latestConsent: {
-        ...message.payload,
-        grantedAt: new Date().toISOString(),
-        prototypeOnly: true,
-      },
+      if (!activeSession) throw new Error("Sign in to the extension before granting consent.");
+      const { error: consentError } = await supabase.from("consents").insert({
+        user_id: activeSession.userId,
+        site_origin: message.payload.siteOrigin,
+        purpose: message.payload.purpose,
+        field_keys: message.payload.fieldKeys,
+        status: "active",
+        expires_at: message.payload.expiresAt || null,
       });
+      if (consentError) throw consentError;
       sendResponse({ success: true });
+      return;
+    }
+
+    if (message.type === "REQUEST_AUTOFILL") {
+      if (!activeSession || !sessionKey) throw new Error("Sign in to the extension before autofill.");
+      const { siteOrigin, requestedFieldKeys } = message.payload;
+      const { data: consents, error: consentError } = await supabase
+        .from("consents")
+        .select("field_keys, expires_at")
+        .eq("user_id", activeSession.userId)
+        .eq("site_origin", siteOrigin)
+        .eq("status", "active");
+      if (consentError) throw consentError;
+
+      const now = Date.now();
+      const approved = new Set<string>();
+      for (const consent of consents || []) {
+        if (!consent.expires_at || new Date(consent.expires_at).getTime() > now) {
+          for (const fieldKey of consent.field_keys || []) approved.add(fieldKey);
+        }
+      }
+
+      const allowedKeys = requestedFieldKeys.filter((fieldKey) => approved.has(fieldKey));
+      const decrypted: Record<string, string> = {};
+      if (allowedKeys.length > 0) {
+        const { data: fields, error: fieldsError } = await supabase
+          .from("profile_fields")
+          .select("field_key, field_value_ciphertext, field_value_iv")
+          .eq("user_id", activeSession.userId)
+          .in("field_key", allowedKeys);
+        if (fieldsError) throw fieldsError;
+
+        for (const field of fields || []) {
+          decrypted[field.field_key] = await decryptField(field.field_value_ciphertext, field.field_value_iv, sessionKey);
+        }
+      }
+      sendResponse({ success: true, profileFields: decrypted, missingConsents: requestedFieldKeys.filter((key) => !approved.has(key)) });
       return;
     }
 

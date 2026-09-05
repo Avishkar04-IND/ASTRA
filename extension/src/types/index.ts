@@ -83,6 +83,7 @@ export type MessageResponse = {
   fields?: DetectableField[];
   filled?: Array<{ fieldKey: FieldKey; value: string }>;
   missingConsents?: FieldKey[];
+  profileFields?: Partial<Record<FieldKey, string>>;
   message?: string;
   error?: string;
   loggedIn?: boolean;

@@ -59,21 +59,6 @@ function setNativeValue(element: HTMLElement, value: string) {
   inputElement.dispatchEvent(new Event("change", { bubbles: true }));
 }
 
-type MockDocumentResponse = {
-  documents: Array<{ fields: Partial<Record<FieldKey, string>> }>;
-};
-
-async function fetchMockDigiLockerFields(): Promise<Partial<Record<FieldKey, string>>> {
-  const response = await fetch(`${window.location.origin}/api/mock/digilocker/documents`);
-  if (!response.ok) throw new Error("Mock DigiLocker API is unavailable.");
-
-  const data = (await response.json()) as MockDocumentResponse;
-  return data.documents.reduce<Partial<Record<FieldKey, string>>>((profile, document) => {
-    Object.assign(profile, document.fields);
-    return profile;
-  }, {});
-}
-
 function fillApprovedFields(fields: DetectableField[], approvedKeys: FieldKey[], profile: Partial<Record<FieldKey, string>>) {
   const filled: Array<{ fieldKey: FieldKey; value: string }> = [];
   const allowed = new Set(approvedKeys);
@@ -96,32 +81,32 @@ function requestConsentAndAutofill(fields: DetectableField[], sendResponse: (res
   const siteOrigin = window.location.origin;
 
   renderConsentPanel(fields, siteOrigin, async (approvedKeys, purpose) => {
-    chrome.runtime.sendMessage(
-      {
+    try {
+      const consentResponse = await chrome.runtime.sendMessage({
         type: "GRANT_CONSENT",
         payload: { siteOrigin, purpose, fieldKeys: approvedKeys, expiresAt: null },
-      },
-      () => {
-        // Best-effort: swallow "Receiving end does not exist" if the service
-        // worker is sleeping when consent fires. The consent record is stored
-        // by the service worker when it wakes; this is non-critical for autofill.
-        void chrome.runtime.lastError;
-      },
-    );
+      }) as MessageResponse;
+      if (!consentResponse?.success) {
+        throw new Error(consentResponse?.message || consentResponse?.error || "Unable to save consent.");
+      }
 
-    try {
-      const profile = await fetchMockDigiLockerFields();
-      const filled = fillApprovedFields(fields, approvedKeys, profile);
-      showNotice(`MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"} from mock DigiLocker.`);
+      const response = await chrome.runtime.sendMessage({
+        type: "REQUEST_AUTOFILL",
+        payload: { siteOrigin, requestedFieldKeys: approvedKeys },
+      }) as MessageResponse;
+      if (!response?.success) throw new Error(response?.message || response?.error || "Unable to retrieve profile fields.");
+
+      const filled = fillApprovedFields(fields, approvedKeys, response.profileFields || {});
+      showNotice(`MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"} from your saved profile.`);
 
       sendResponse({
         success: true,
         fields,
         filled,
-        message: `MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"} from mock DigiLocker after consent.`,
+        message: `MahaSetu filled ${filled.length} field${filled.length === 1 ? "" : "s"} from your saved profile after consent.`,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to fetch mock DigiLocker data.";
+      const message = error instanceof Error ? error.message : "Unable to retrieve saved profile data.";
       showNotice(message);
       sendResponse({ success: false, fields, message });
     }
