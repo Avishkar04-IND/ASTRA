@@ -13,11 +13,20 @@ export default function Consents() {
     if (!user?.id) return;
     setLoading(true);
     setError(null);
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('consents')
       .select('*')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
+
+    // Support the live database while it still uses granted_at.
+    if (error?.message?.includes('consents.created_at')) {
+      ({ data, error } = await supabase
+        .from('consents')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('granted_at', { ascending: false }));
+    }
     
     if (error) {
       setError(error.message);
@@ -93,7 +102,7 @@ export default function Consents() {
           ))}
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500 mt-3">
-          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Granted: {new Date(consent.created_at).toLocaleDateString()}</span>
+          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Granted: {new Date(consent.created_at || consent.granted_at).toLocaleDateString()}</span>
           {consent.expires_at && (
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Expires: {new Date(consent.expires_at).toLocaleDateString()}</span>
           )}
