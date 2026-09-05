@@ -7,16 +7,21 @@ export default function Consents() {
   const { user } = useSession();
   const [consents, setConsents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   const loadConsents = async () => {
+    if (!user?.id) return;
     setLoading(true);
+    setError(null);
     const { data, error } = await supabase
       .from('consents')
       .select('*')
       .eq('user_id', user.id)
-      .order('granted_at', { ascending: false });
+      .order('created_at', { ascending: false });
     
-    if (!error && data) {
+    if (error) {
+      setError(error.message);
+    } else if (data) {
       setConsents(data);
     }
     setLoading(false);
@@ -24,7 +29,7 @@ export default function Consents() {
 
   useEffect(() => {
     loadConsents();
-  }, []);
+  }, [user?.id]);
 
   const handleRevoke = async (consent) => {
     if (!window.confirm(`Revoke access for ${consent.site_origin}?`)) return;
@@ -88,7 +93,7 @@ export default function Consents() {
           ))}
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500 mt-3">
-          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Granted: {new Date(consent.granted_at).toLocaleDateString()}</span>
+          <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Granted: {new Date(consent.created_at).toLocaleDateString()}</span>
           {consent.expires_at && (
             <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Expires: {new Date(consent.expires_at).toLocaleDateString()}</span>
           )}
@@ -115,6 +120,8 @@ export default function Consents() {
 
       {loading ? (
         <div className="text-center py-12 text-slate-500">Loading consents...</div>
+      ) : error ? (
+        <div className="text-center py-12 text-red-600">Unable to load consent history: {error}</div>
       ) : (
         <div className="space-y-8">
           <section>
